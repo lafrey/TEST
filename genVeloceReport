@@ -1,0 +1,691 @@
+#!/usr/bin/python3
+# Edited December 2022 by Nathan Windels (nathan.windels@siemens.com)
+
+#  SINGLE TESTBENCH:
+#    generates a report for a single testbench inside the top-level directory of the project
+#
+#    > ./genVeloceReport.py -i /path/to/compile/DB
+#
+#	 OR run it from within the compile DB without the -i option:
+#
+#	 > ./path/to/genVeloceReport.py
+#
+#  DEBUGGING:
+#    prints extra script debugging information to the terminal - does not change the report
+#
+#    > ./genVeloceReport.py -i /path/to/compile/DB -d
+#
+#  HELP: 
+#    > ./genVeloceReport.py -h
+
+#
+#  TODO: add support for comparing 2 (or more) projects
+#  TODO: properly handle 
+#
+
+
+########Import appropriate libraries##########
+#os - Common operating system utilities
+import os 
+#re - Regex/wildcard abilities
+import re
+#sys - Function/methods that help interact with interpreter
+import sys
+#velCompReportObj - ask Nathan about this.  
+from velCompReportObj import velCompReportObj
+#pprint - "Pretty-Print", allows you to reform datat structures that may not be compatible as input to interpreter, to a friendly form
+import pprint
+#math - Adds built in math functions (min, max, etc)
+import math
+#path - how is this different than "import os"
+from os import path
+#OptionParser - Process command line options 
+from optparse import OptionParser
+#locale - POSIX database access
+import locale
+
+
+#######Initialize Basic Values#######
+veloce = None
+veloce_report = ""
+precompile_env = ""
+XL_VIP_HOME = ""
+VPROBE_HOME = ""
+final_log = None
+master_dict = {}
+
+TABLE_WIDTH = 60
+
+
+def env_variables():
+	global XL_VIP_HOME
+	global VPROBE_HOME
+
+	if (os.path.exists(precompile_env)):
+		fp = open(precompile_env, "r")
+		for line in fp:
+			if "VPROBE_HOME=" in line:
+				VPROBE_HOME = line[12:]
+			if "XL_VIP_HOME=" in line:
+				XL_VIP_HOME = line[12:]
+		fp.close()
+
+
+def initial_setup():
+
+	if veloce.DEBUG_MODE: print("\n[DEBUG] " + this_filename + " - initializing report setup...")
+
+	global final_log
+	global veloce_report
+
+	# if veloce.write_perm:
+	# 	veloce_report = veloce.curr_dir + "/veloce_report.txt"
+	# else:
+	# 	veloce_report = "veloce_report.txt"
+
+	# if veloce.DEBUG_MODE: print("\n[DEBUG] " + this_filename + " - writing report to: " + veloce_report)
+
+	final_log = open(veloce_report,"w")
+
+	veloce.parse_veloce_config()
+	veloce.populate_warning_repo()
+
+
+
+def get_design_info():
+
+	veloce.parse_velcomp_log()
+	veloce.parse_compile_rtlc_initial()
+	veloce.parse_rtlc_log()
+	veloce.parse_emptyMod()
+	veloce.parse_inferred_memories()
+	veloce.parse_velsyn_log()
+	veloce.parse_velgs_log()
+	# veloce.parse_static_clock_report()
+
+
+def write_table_split(table_width, split_char):
+	for x in range(table_width):
+		final_log.write(split_char)
+	final_log.write("\n")
+
+
+def write_padding_right(width, content):
+	final_log.write(content)
+	for x in range(width - len(content)):
+		final_log.write(" ")
+
+
+def write_table_cell_centered(col_size, content, split_char, is_final):
+
+	final_log.write(split_char)
+	x = int( (col_size - len(content)) / 2 )
+	for y in range(x):
+		final_log.write(" ")
+	final_log.write(content)
+	x = int(math.ceil((col_size - len(content)) / 2.0))
+	for y in range(x):
+		final_log.write(" ")
+	if is_final:
+		final_log.write(split_char + "\n")
+
+
+def write_table_cell_left(col_size, content, split_char, is_final):
+
+	final_log.write(split_char)
+	final_log.write(content)
+	x = int(col_size - len(content))
+	for y in range(x):
+		final_log.write(" ")
+	if is_final:
+		final_log.write(split_char + "\n")
+
+
+def write_table_cell_right(col_size, content, split_char, is_final):
+
+	final_log.write(split_char)
+	x = int(col_size - len(content))
+	for y in range(x):
+		final_log.write(" ")
+	final_log.write(content)
+	if is_final:
+		final_log.write(split_char + "\n")
+
+
+def write_report_pretext():
+	global TABLE_WIDTH
+
+	write_table_split(TABLE_WIDTH, "#")
+	write_table_cell_centered(TABLE_WIDTH-2, "Copyright Mentor Graphics Corporation 2022", "#", True)
+	write_table_cell_centered(TABLE_WIDTH-2, "All Rights Reserved", "#", True)
+	write_table_cell_centered(TABLE_WIDTH-2, "8005 SW Boeckman Road", "#", True)
+	write_table_cell_centered(TABLE_WIDTH-2, "Wilsonville, OR, 97070, USA", "#", True)
+	write_table_split(TABLE_WIDTH, "#")
+	
+	# str = ""
+	# str += "############################################################\n"
+	# str += "#        Copyright Mentor Graphics Corporation 2022        #\n"
+	# str += "#                    All Rights Reserved                   #\n"
+	# str += "#                   8005 SW Boeckman Road                  #\n"
+	# str += "#                Wilsonville, OR, 97070, USA               #\n"
+	# str += "############################################################\n"
+
+	# final_log.write(str)
+
+
+def write_table_contents():
+	global TABLE_WIDTH
+
+	final_log.write("\n")
+	write_table_split(TABLE_WIDTH, "+")
+	write_table_cell_centered(TABLE_WIDTH-2, "TABLE OF CONTENTS", "|", True)
+	write_table_split(TABLE_WIDTH, "+")
+
+	write_table_cell_left(TABLE_WIDTH-2, " ", "|", True)
+
+	write_table_cell_left(TABLE_WIDTH-2, "    " + "Part 1: High Level Design summary", "|", True)
+	write_table_cell_left(TABLE_WIDTH-2, "    " + "Part 2: Use-modes enabled/disabled", "|", True)
+	write_table_cell_left(TABLE_WIDTH-2, "    " + "Part 3: RTLC summary and warnings", "|", True)
+	write_table_cell_left(TABLE_WIDTH-2, "    " + "Part 4: Velsyn summary and warnings", "|", True)
+	write_table_cell_left(TABLE_WIDTH-2, "    " + "Part 5: Design footprint statistics", "|", True)
+
+	write_table_cell_left(TABLE_WIDTH-2, " ", "|", True)
+	write_table_split(TABLE_WIDTH, "+")
+	
+
+def write_high_level_summary(title="Part 1: High Level Design summary"):
+	global TABLE_WIDTH
+	text_width = 18
+
+	final_log.write("\n\n\n")
+	final_log.write("    " + title + "\n")
+	write_table_split(TABLE_WIDTH, "-")
+	final_log.write("\n")
+
+	write_padding_right(text_width, "  Build path:")
+	final_log.write(veloce.curr_dir + "\n")
+
+	write_padding_right(text_width, "  Platform:")
+	final_log.write(veloce.hw_platform + "\n")
+
+	write_padding_right(text_width, "  Veloce Version:")
+	if veloce.VELOCE_VERSION == "":
+		final_log.write("Could not determine VELOCE_VERSION\n")
+	else:
+		final_log.write(veloce.VELOCE_VERSION + "\n")
+
+	write_padding_right(text_width, "  VMW_HOME:")
+	if veloce.VMW_HOME == "":
+		final_log.write("Could not determine VMW_HOME\n")
+	else:
+		final_log.write(veloce.VMW_HOME + "\n")
+
+	write_padding_right(text_width, "  TBX_HOME:")
+	if veloce.TBX_HOME == "":
+		final_log.write("Could not determine TBX_HOME\n")
+	else:
+		final_log.write(veloce.TBX_HOME + "\n")
+	
+	write_padding_right(text_width, "  Design size:")
+	if str(veloce.avb_count) == "":
+		final_log.write("Could not determine the design size\n")
+	else:
+		final_log.write(str(veloce.avb_count) + " AVBs\n")
+
+	write_padding_right(text_width, "  Uclock:")
+	if str(veloce.UCLOCK) == "":
+		final_log.write("Could not determine the uclock frequency\n")
+	else:
+		final_log.write(str("uClock Frequency: " + veloce.UCLOCK) + "\n")
+	
+	if veloce.VELOCE_VERSION not in veloce.reco_versions:
+		final_log.write("\nThe veloce version used for the build may not be supported by this version of the script. \n")
+
+	if (veloce.design_status == "fail"):
+		print("Design not compiled successfully. Please review the compile log files.")
+		final_log.write("\n\n**Design not compiled successfully. Please review the compile log files.**")
+	
+
+
+def write_use_modes(title="Part 2: Use-modes (apps) enabled"):
+
+	col_1_width = 21
+	col_2_width = 11
+	col_3_width = 24
+
+	table_width = col_1_width + col_2_width + col_3_width + 4
+
+	final_log.write("\n\n\n")
+	final_log.write("    " + title + "\n")
+	write_table_split(table_width, "-")
+	final_log.write("\n")
+
+	final_log.write("\n")
+	write_table_split(table_width, "+")
+	write_table_cell_centered(col_1_width, "MODE", "|", False)
+	write_table_cell_centered(col_2_width, "ENABLED", "|", False)
+	write_table_cell_centered(col_3_width, "MODE TYPE", "|", True)
+	write_table_split(table_width, "+")
+
+	write_table_cell_left(col_1_width, "  " + "POWER ESTIMATION", "|", False)
+	if veloce.POWER_ESTIMATION_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "ASSERTIONS", "|", False)
+	if veloce.ASSERTIONS_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)	
+	
+	write_table_cell_left(col_1_width, "  " + "COVERAGE", "|", False)
+	if veloce.COVERAGE_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "DFT", "|", False)
+	if veloce.DFT_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "FAULT", "|", False)
+	if veloce.FAULT_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)	
+
+	write_table_cell_left(col_1_width, "  " + "POWER AWARE (UPF)", "|", False)
+	if veloce.POWER_AWARE == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "RTLC ADVISOR", "|", False)
+	if veloce.ADVISOR == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, veloce.ADVISOR_TYPE, "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	
+	write_table_cell_left(col_1_width, "  " + "XWAVE", "|", False)
+	if veloce.XWAVE == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "Autocui", "|", False)
+	if veloce.AUTO_CUI == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_cell_left(col_1_width, "  " + "Parallel", "|", False)
+	if veloce.PARALLEL_ENABLED == True:
+		write_table_cell_centered(col_2_width, "YES", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+	else:
+		write_table_cell_centered(col_2_width, "NO", "|", False)
+		write_table_cell_centered(col_3_width, "", "|", True)
+
+	write_table_split(TABLE_WIDTH, "+")
+
+
+	final_log.write("\nRecommendations:\n")
+	if veloce.AUTO_CUI == False:
+		final_log.write("  - use the option 'velsyn -useAutoCUiFLow' to enable auto cui.\n")
+	if veloce.PARALLEL_ENABLED == False:
+		final_log.write("  - use option 'velsyn -parallel' in veloce.config. It enables velsyn to compile faster by running in parallel mode.\n")
+
+	if (veloce.VPROBE_HOME != ""):
+		final_log.write("VPROBE_HOME = " + veloce.VPROBE_HOME + "\n")
+	
+	if (veloce.XL_VIP_HOME != ""):
+		final_log.write("XL_VIP_HOME = ")
+		final_log.write(veloce.XL_VIP_HOME)
+
+	
+	
+
+def write_rtlc_summary(title="Part 3: RTLC summary and warnings"): 
+	global TABLE_WIDTH
+
+	final_log.write("\n\n\n")
+	final_log.write("    " + title + "\n")
+	write_table_split(TABLE_WIDTH, "-")
+
+	final_log.write("\nRTLC compile time: " + str(veloce.rtlc_time) + " minutes")
+
+	if veloce.empty_Mod != 0:
+		final_log.write("\n\nNumber of empty modules in the design: ")
+		final_log.write(str(veloce.empty_Mod))
+		if len(veloce.list_emptyMod) <= 5:
+			final_log.write("\nList of empty Modules:\n")
+			for items in veloce.list_emptyMod:
+				final_log.write(items)
+				final_log.write("\n")
+		final_log.write("\n  - refer to " + veloce.emptyMod_list_short +" file for more details")
+		
+	
+	if (len(veloce.Delay_files) != 0):
+		final_log.write("\n\nTotal number of RTL files with '#' delay's: ")
+		final_log.write(str(len(veloce.Delay_files)))
+		final_log.write("\n  - this can cause simulation mistmatch")
+		if(len(veloce.Delay_files) <= 5):
+			final_log.write("\nList of RTL files:\n")
+			for item in range(len(veloce.Delay_files)):
+				final_log.write(str(veloce.Delay_files[item]))
+				final_log.write("\n")
+		else:
+			final_log.write("\n  - refer to " + veloce.rtlc_log_short + " for more details")
+
+
+	if (len(veloce.four_state_mod) != 0):
+		final_log.write("\n\nNumber of RTL modules with 4 state value assignment or comparison: ")
+		final_log.write(str(len(veloce.four_state_mod)))
+		final_log.write("\n  - this can cause simulation mistmatch")
+		if(len(veloce.four_state_mod) <= 5):
+			final_log.write("\nList of the names of such modules\n")
+			for item in range(len(veloce.four_state_mod)):
+				final_log.write(str(veloce.four_state_mod[item]))
+				final_log.write("\n")
+		else:
+			final_log.write("\n  - refer to " + veloce.rtlc_log_short + " for more details on these modules")
+
+	final_log.write("\n\n")
+
+	final_log.write("### RTLC warning summary ###")
+
+	# final_log.write("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+	# final_log.write("\n+   CODE   | Severity |                        Descrpition                            | Violations +")
+	# final_log.write("\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+
+	#converting to dynamic table size:
+	sec_1_text = "CODE"
+	sec_2_text = "Severity"
+	sec_3_text = "Descrpition"
+	sec_4_text = "Violations"
+ 
+	sec_1_width = len(str(sec_1_text)) + 2
+	for item in veloce.warning_repo:
+		if len(item) + 2 > sec_1_width:
+			sec_1_width = len(item) + 2
+
+	sec_2_width = len(str(sec_2_text)) + 2
+	for item in veloce.warning_repo:
+		if int(veloce.warning_repo[item][1]) != 0:
+			if len(veloce.warning_repo[item][2]) + 2 > sec_2_width:
+				sec_2_width = len(veloce.warning_repo[item][2]) + 2
+	
+	sec_3_width = 10
+	for item in veloce.warning_repo:
+		if len(veloce.warning_repo[item][0]) + 2 > sec_3_width:
+			sec_3_width = len(veloce.warning_repo[item][0]) + 2
+	
+	sec_4_width = len(str(sec_4_text)) + 2
+	for item in veloce.warning_repo:
+		if len(str(veloce.warning_repo[item][1])) + 2 > sec_4_width:
+			sec_4_width = len(str(veloce.warning_repo[item][1])) + 2
+	
+	full_width = sec_1_width + sec_2_width + sec_3_width + sec_4_width + 5
+
+	# write the header of the table
+	final_log.write("\n")
+	write_table_split(full_width, "+")
+	write_table_cell_centered(sec_1_width, sec_1_text, "|", False)
+	write_table_cell_centered(sec_2_width, sec_2_text, "|", False)
+	write_table_cell_centered(sec_3_width, sec_3_text, "|", False)
+	write_table_cell_centered(sec_4_width, sec_4_text, "|", True)
+	write_table_split(full_width, "+")
+
+	# write the table contents
+	for keys in veloce.warning_repo:
+		if int(veloce.warning_repo[keys][1] and "warning added by summary script" not in veloce.warning_repo[keys][0]) != 0:
+			write_table_cell_centered(sec_1_width, keys, "|", False)
+			write_table_cell_left(sec_2_width, " " + veloce.warning_repo[keys][2], "|", False)
+			write_table_cell_left(sec_3_width, " " + veloce.warning_repo[keys][0], "|", False)
+			write_table_cell_centered(sec_4_width, veloce.warning_repo[keys][1], "|", True)
+
+	# write the footer of the table
+	write_table_split(full_width, "+")
+
+
+
+def write_velsyn_summary(title="Part 4: Velsyn summary and warnings"):
+	global TABLE_WIDTH
+
+	final_log.write("\n\n\n")
+	final_log.write("    " + title + "\n")
+	write_table_split(TABLE_WIDTH, "-")
+
+	final_log.write("Velsyn compile time: " + str(veloce.velsyn_time) + " mins\n")
+
+	final_log.write("\nTotal inferred memories in the design: " + str(veloce.memories_inferred) + "\n")
+	final_log.write("  - all memories dumped in inferred_mem.list\n")
+
+	if veloce.Mm_factor != "":
+		final_log.write("\nMm factor: " + str(veloce.Mm_factor) + "\n")
+		# final_log.write("")
+		if (float(veloce.Mm_factor) > float(10.0)):
+			final_log.write("Mm greater than 10.0 is not recommended.\n")
+	else:
+		final_log.write("\nMm factor not set in the veloce.config file. Using the default Mm value 10.0\n")
+
+
+
+def write_design_footprint(title="Part 5: Design footprint statistics "):
+	global TABLE_WIDTH
+
+	# print section header
+	final_log.write("\n\n\n")
+	final_log.write("    " + title + "\n")
+	write_table_split(TABLE_WIDTH, "-")
+
+	final_log.write("\n### LUT and Flop Counts ###")
+	# final_log.write("\nDLE = Dead Logic Elimination\n")
+
+	#converting to dynamic table size:
+	sec_1_text = "Description"
+	sec_2_text = "Before DLE"
+	sec_3_text = "After DLE"
+ 
+	sec_1_width = len(str(sec_1_text)) + 2
+	for item in veloce.lut_flop_count:
+		if len(veloce.lut_flop_count[item]["description"]) + 2 > sec_1_width:
+			sec_1_width = len(veloce.lut_flop_count[item]["description"]) + 2
+
+	sec_2_width = len(str(sec_2_text)) + 2
+	for item in veloce.lut_flop_count:
+		if len(locale.format("%d", int(veloce.lut_flop_count[item]["before_dead"]), grouping=True)) + 2 > sec_2_width:
+			sec_2_width = len(locale.format("%d", int(veloce.lut_flop_count[item]["before_dead"]), grouping=True)) + 2
+	
+	sec_3_width = len(str(sec_3_text)) + 2
+	for item in veloce.lut_flop_count:
+		if len(locale.format("%d", int(veloce.lut_flop_count[item]["after_dead"]), grouping=True)) + 2 > sec_3_width:
+			sec_3_width = len(locale.format("%d", int(veloce.lut_flop_count[item]["after_dead"]), grouping=True)) + 2
+	
+	full_width = sec_1_width + sec_2_width + sec_3_width + 4
+
+	# write the header of the table
+	final_log.write("\n")
+	write_table_split(full_width, "+")
+	write_table_cell_centered(sec_1_width, sec_1_text, "|", False)
+	write_table_cell_centered(sec_2_width, sec_2_text, "|", False)
+	write_table_cell_centered(sec_3_width, sec_3_text, "|", True)
+	write_table_split(full_width, "+")
+
+	# write the table contents
+	for item in veloce.lut_flop_count:
+		write_table_cell_left(sec_1_width, " " + veloce.lut_flop_count[item]["description"], "|", False)
+		write_table_cell_right(sec_2_width, locale.format("%d", int(veloce.lut_flop_count[item]["before_dead"]), grouping=True) + " ", "|", False)
+		write_table_cell_right(sec_3_width, locale.format("%d", int(veloce.lut_flop_count[item]["after_dead"]), grouping=True) + " ", "|", True)
+
+	# locale.format("%d", veloce.lut_flop_count[item]["before_dead"], grouping=True)
+
+	# write the footer of the table
+	write_table_split(full_width, "+")
+
+	final_log.write("\nTotal number of undriven nets in the design: ")
+	final_log.write(str(veloce.undriven_nets))
+	final_log.write("\nRefer to " + veloce.velsyn_undriven_short + " for details")
+
+
+	# need to check the version and update this message!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	if (veloce.multi_driv != 0):
+		final_log.write("\n\nTotal number of multiply driven signals: ")
+		final_log.write(str(veloce.multi_driv))
+		final_log.write("\nReview the details in " + veloce.velsyn_log_short + ". Look for 'Warning 5' in the log file")
+	else:
+		final_log.write("\n\nThere are no multiple drivers in the design")
+
+
+	if(veloce.deadlogic_modules == 0):
+		final_log.write("\nNo deadlogic nets or modules found in the design")
+	elif(veloce.deadlogic_modules == -2):
+		str_v = ""
+		#final_log.write("p0 dump not enabled. To view nets and modules marked as deadlogic, please enable p0 dump in the veloce.config file")
+	elif(veloce.deadlogic_modules == -1):
+		final_log.write("\np0 dump file does not exist. Could not determine number of deadlogic nets or modules in the design")
+	else:
+		final_log.write("\n\nNumber of nets marked as deadlogic: ")
+		final_log.write(str(veloce.deadlogic_nets))
+		final_log.write("\nNumber of modules marked as deadlogic: ")
+		final_log.write(str(veloce.deadlogic_modules))
+		final_log.write("\nYou can refer to the files deadmodules.list and deadnets.list in your compiled directory for further details")
+		#final_log.write("\nRefer to the p0 dump file for detailed list of modules and nets")
+
+	if (veloce.arbitrary_loops == 0):
+		final_log.write("\nNo arbitrarily broken clock loops in the design")
+	elif (veloce.arbitrary_loops == -2):
+		str_v = ""
+		#final_log.write("\nWe are in a state that I don't understand")
+	elif (veloce.arbitrary_loops == -1):
+		final_log.write("\nc1 dump file does not exist")
+	else:
+		final_log.write("\n\nNumber of arbitrary broken loops: ")
+		final_log.write(str(veloce.arbitrary_loops))
+		final_log.write("\nPlease refer to the c1 dump file located at ")
+		final_log.write(veloce.dumps["c1"])
+		final_log.write(" for details")
+	
+
+def write_footer():
+	global TABLE_WIDTH
+
+	final_log.write("\n\n")
+	write_table_split(TABLE_WIDTH, "#")
+	write_table_cell_centered(TABLE_WIDTH-2, "END OF REPORT", "#", True)
+	write_table_split(TABLE_WIDTH, "#")
+	final_log.close()
+
+
+def run(options):
+    
+	global precompile_env
+	global veloce
+	global this_filename
+	global veloce_report
+ 
+	this_filename = os.path.basename(__file__)
+	locale.setlocale(locale.LC_ALL, 'en_US')
+	# locale.format("%d", 1255000, grouping=True)
+
+	project_dir = options.input_project
+	debug_mode = options.debug_mode
+	output_dir = options.output_dir
+	output_file = options.output_filename
+ 
+	#print(project_dir)
+ 
+	if project_dir is None:
+		project_dir = os.environ['PWD']
+
+	if output_dir is None:
+		output_dir = project_dir
+
+	#parse inputs here!  This is before the init, so it can't have anything to do with the veloce class yet!
+	print("\n" + this_filename + " - Veloce build path: " + project_dir)
+	
+	if not os.path.exists(project_dir):
+		print("Compile DB does not exist.")
+		print("\nPlease check the path of your compiled directory.")
+		exit()
+  
+	if os.access(output_dir, os.W_OK):
+		if output_file is None:
+			veloce_report = output_dir + "/veloce_report.txt"
+		else:
+			veloce_report = output_dir + "/" + output_file
+	else:
+		print("\nWrite permission to the compile dir does not exist. Creating report file in local directory")
+		if output_file is None:
+			veloce_report = os.environ['PWD'] + "/veloce_report.txt"
+		else:
+			veloce_report = os.environ['PWD'] + "/" + output_file
+
+	veloce = velCompReportObj(project_dir, debug_mode)
+ 
+	precompile_env = veloce.curr_dir + "/precompile_env.txt"
+ 
+	initial_setup()
+	
+	write_report_pretext()
+	write_table_contents()
+	
+	get_design_info()
+
+	# for task in veloce.completed_tasks:
+	# 	print (task)
+
+	
+	# print (veloce.existing_logs)
+	# for log in veloce.existing_logs:
+	# 	print (task)
+
+
+	write_high_level_summary()
+	write_use_modes()
+	write_rtlc_summary()
+	write_velsyn_summary()
+	write_design_footprint()
+
+	write_footer()
+	
+	print("\n" + this_filename + " - Veloce compile report generated at: " + veloce_report + "\n") 
+
+
+if __name__ == "__main__":
+	parser = OptionParser()
+	parser.add_option('-i','--input-project-dir', dest='input_project', 
+		help='REQUIRED: Path to the directory to be analyzed.', metavar='/path/to/project/dir')
+	parser.add_option('-o','--output-dir', dest='output_dir',
+		help='OPTIONAL: Path to the directory where report is to be generated.', metavar='/path/to/output/dir')
+	parser.add_option('-f','--output-filename', dest='output_filename',
+		help='OPTIONAL: The name of the report file to be generated.', metavar='veloce_report.txt')
+	parser.add_option('-d','--debug-mode', action="store_true", dest='debug_mode', default=False,
+		help='OPTIONAL: Debug mode gives a more detailed description on the command line. Typically used for debugging the script.')
+	(options,args) = parser.parse_args()
+	
+	#if not options.corners_filename:
+	#	parser.error("must specify a corners file with -c. Try -h for help.")
+
+	run(options)
